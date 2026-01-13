@@ -10,6 +10,8 @@
   const width = 20;
 
   const dispatch = createEventDispatcher();
+  let undos = [];
+  let redos = [];
 
   let gridRef;
   let preview = new Map;
@@ -103,19 +105,36 @@
   // XXX: does not check that this is legal fill
   const setFill = ({front, back, step, x, y, word, pivotIdx}) => {
     let idx = y * width + x - pivotIdx * step;
+    const updates = [];
     if (front <= idx - step) {
-      grid[idx - step].fill = "";
-      grid[idx - step].wall = true;
+      updates.push({
+        idx: idx - step,
+        is: {
+          fill: "",
+          wall: true,
+        },
+      });
     }
-    for (const chunk of chunked(word)) {
-      grid[idx].fill = chunk;
-      grid[idx].wall = false;
+    for (const fill of chunked(word)) {
+      updates.push({
+        idx,
+        is: {
+          fill,
+          wall: false,
+        },
+      });
       idx += step;
     }
     if (idx < back) {
-      grid[idx].fill = "";
-      grid[idx].wall = true;
+      updates.push({
+        idx,
+        is: {
+          fill: "",
+          wall: true,
+        },
+      });
     }
+    performAction("Set fill", updates);
     gridRef.focus();
     renumber();
     dispatchUpdate();
@@ -167,9 +186,13 @@
   // ===
 
   export const setFillAtSelected = fill => {
-    let idx = selected.y * width + selected.x;
-    grid[idx].wall = false;  // ᖍ(∙⟞∙)ᖌ
-    grid[idx].fill = fill;
+    performAction("Set fill", [{
+      idx: selected.y * width + selected.x,
+      is: {
+        wall: false,  // ᖍ(∙⟞∙)ᖌ
+        fill,
+      },
+    }]);
     gridRef.focus();
     dispatchUpdate();
   }
@@ -177,12 +200,14 @@
   const toggleWall = (evt, x, y) => {
     evt.preventDefault();
     const idx = y * width + x;
-    grid[idx].wall ^= true;
-    if (grid[idx].wall) {
-      grid[idx].fill = "";
-    }
+    performAction("Toggle wall", [{
+      idx,
+      is: {
+        fill: "",
+        wall: !grid[idx].wall,
+      }
+    }]);
     renumber();
-    dispatchUpdate();
   }
 
   const renumberSubgrid = (grid, width, height) => {
@@ -258,8 +283,7 @@
         if (!selected) return;
         const idx = selected.y * width + selected.x;
         if (grid[idx].fill.length) {
-          grid[idx].fill = "";
-          dispatchUpdate();
+          performAction("Delete cell contents", [{idx, is: {fill: ""}}]);
         } else if (selected.x != 0 && !grid[idx-1].wall) {
           setSelected({x: selected.x - 1, y: selected.y});
         }
@@ -271,8 +295,8 @@
           const idx = selected.y * width + selected.x;
           if (grid[idx].wall) return;
           if (grid[idx].fill.length < cellFillLen) {
-            grid[idx].fill += chr;
-            dispatchUpdate();
+            const fill = grid[idx].fill + chr;
+            performAction("Type character", [{idx, is: {fill}}]);
           }
         }
     }
@@ -286,6 +310,50 @@
     const max_y = Math.max(selected.y, selected.y2);
     return min_x <= x && x <= max_x &&
       min_y <= y && y <= max_y;
+  }
+
+  // Perform an undo-able action, and register it to the undo stack.
+  const performAction = (action, updates) => {
+    for (let update of updates) {
+      const keys = Object.keys(update.is);
+      update.was = Object.fromEntries(keys.map(key => [key, grid[update.idx][key]]));
+      grid[update.idx] = {...grid[update.idx], ...update.is};
+    }
+
+    undos.push({action, updates});
+    undos = undos;
+    redos = [];
+    dispatchUpdate();
+  }
+
+  const undo = () => {
+    let action = undos.pop();
+    redos.push(action);
+
+    for (let update of action.updates) {
+      grid[update.idx] = {...grid[update.idx], ...update.was};
+    }
+
+    undos = undos;
+    redos = redos;
+    renumber(); // TODO: could only renumber if a wall were changed.
+    gridRef.focus();
+    dispatchUpdate();
+  }
+
+  const redo = () => {
+    let action = redos.pop();
+    undos.push(action);
+
+    for (let update of action.updates) {
+      grid[update.idx] = {...grid[update.idx], ...update.is};
+    }
+
+    undos = undos;
+    redos = redos;
+    renumber(); // TODO: could only renumber if a wall were changed.
+    gridRef.focus();
+    dispatchUpdate();
   }
 
   const downloadURL = (data, fileName) => {
@@ -382,6 +450,8 @@
       </div>
     </div>
     <button on:click={exportPuz}>Export{#if isAreaSelected}&nbsp;Selected{/if}</button>
+    <button class="push" disabled={undos.length === 0} on:click={undo}>Undo</button>
+    <button disabled={redos.length === 0} on:click={redo}>Redo</button>
   </div>
   <div id="grid"
     tabindex="0"
@@ -536,6 +606,15 @@
 
   .fill-width {
     flex: 1;
+  }
+
+  .header {
+    display: flex;
+    margin-bottom: 10px;
+  }
+
+  .push {
+    margin-left: auto;
   }
 
   input.title {
