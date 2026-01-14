@@ -405,6 +405,7 @@
     const acrossClues = [];
     const downClues = [];
     for (const cell of subgrid) {
+      if (cell.number == null) continue
       if (cell.acrossClue != null) {
         acrossClues.push([cell.number, cell.acrossClue]);
       }
@@ -414,7 +415,7 @@
     }
     const fill = subgrid.map(cell => cell.wall ? null : cell.fill);
 
-    const fileContents = generate_puz({
+    const payload = {
       width: subwidth,
       height: subheight,
       grid: fill,
@@ -422,7 +423,8 @@
       downClues,
       title,
       author,
-    });
+    };
+    const fileContents = generate_puz(payload);
     const filename = title || "Untitled";
     downloadBlob(fileContents, `${filename}.puz`, "application/octet-stream");
   }
