@@ -281,6 +281,10 @@
         break;
       case 8: // bksp
         if (!selected) return;
+        if (isAreaSelected) {
+          deleteSelected("Delete region");
+          break;
+        }
         const idx = selected.y * width + selected.x;
         if (grid[idx].fill.length) {
           performAction("Delete cell contents", [{idx, is: {fill: ""}}]);
@@ -289,7 +293,36 @@
         }
         break;
       default:
-        if (!selected || evt.ctrlKey || evt.altKey || evt.metaKey) return;
+        if (!selected) return;
+        if (evt.ctrlKey || evt.metaKey) {
+          switch (evt.keyCode) {
+            case 67: // C
+              copySelected();
+              break;
+            case 88: // X
+              copySelected();
+              deleteSelected("Cut region");
+              break;
+            case 86: // V
+              navigator.clipboard.readText().then(text => {
+                // TODO: we should REALLY, REALLY sanitize this input.
+                let obj;
+                try {
+                  obj = JSON.parse(text);
+                } catch { return };
+                paste(obj);
+              })
+              break;
+            case 90: // Z
+              if (evt.shiftKey) {
+                redo();
+              } else {
+                undo();
+              }
+              break;
+          }
+        }
+        if (evt.ctrlKey || evt.altKey || evt.metaKey) return;
         if (evt.keyCode > 64 && evt.keyCode < 91) {
           const chr = String.fromCharCode(evt.keyCode);
           const idx = selected.y * width + selected.x;
@@ -304,10 +337,7 @@
 
   const cellIsSelected = (selected, x, y) => {
     if (!selected) return false;
-    const min_x = Math.min(selected.x, selected.x2);
-    const max_x = Math.max(selected.x, selected.x2);
-    const min_y = Math.min(selected.y, selected.y2);
-    const max_y = Math.max(selected.y, selected.y2);
+    const { min_x, max_x, min_y, max_y } = normalizedSelected();
     return min_x <= x && x <= max_x &&
       min_y <= y && y <= max_y;
   }
@@ -356,6 +386,26 @@
     dispatchUpdate();
   }
 
+  const paste = ({ subgrid, subheight, subwidth }) => {
+    if (!selected) return;
+    // TODO: some visual feedback if this fails
+    if (selected.x + subwidth > width || selected.y + subheight > height) return;
+    const updates = [];
+    let gridIdx = 0;
+    for (let y = 0; y < subheight; y++) {
+      for (let x = 0; x < subwidth; x++) {
+        const idx = (selected.y + y) * width + (selected.x + x);
+        updates.push({
+          idx,
+          is: subgrid[gridIdx],
+        });
+        gridIdx++;
+      }
+    }
+    performAction("Paste region", updates);
+    renumber();
+  }
+
   const downloadURL = (data, fileName) => {
     const a = document.createElement('a');
     a.href = data;
@@ -375,32 +425,73 @@
     setTimeout(() => window.URL.revokeObjectURL(url), 1000);
   }
 
-  const exportPuz = () => {
-    let min_x;
-    let max_x;
-    let min_y;
-    let max_y;
-    if (isAreaSelected) {
-      min_x = Math.min(selected.x, selected.x2);
-      max_x = Math.max(selected.x, selected.x2);
-      min_y = Math.min(selected.y, selected.y2);
-      max_y = Math.max(selected.y, selected.y2);
-    } else {
-      min_x = 0;
-      min_y = 0;
-      max_x = width-1;
-      max_y = height-1;
+  const normalizedSelected = () => {
+    return {
+      min_x: Math.min(selected.x, selected.x2),
+      max_x: Math.max(selected.x, selected.x2),
+      min_y: Math.min(selected.y, selected.y2),
+      max_y: Math.max(selected.y, selected.y2),
     }
+  }
 
+  const copySelected = () => {
+    if (!selected) return;
+    let region = normalizedSelected();
+    const clone = cloneSubgrid(region);
+    for (let cell of clone.subgrid) {
+      delete cell.number;
+    }
+    navigator.clipboard.writeText(JSON.stringify(clone));
+  }
+
+  const deleteSelected = (action) => {
+    if (!selected) return;
+    const updates = [];
+    const { min_x, max_x, min_y, max_y } = normalizedSelected();
+
+    for (let y = min_y; y <= max_y; y++) {
+      for (let x = min_x; x <= max_x; x++) {
+        const idx = y * width + x;
+        updates.push({
+          idx,
+          is: {
+            fill: "",
+            wall: false,
+          },
+        });
+      }
+    }
+    performAction(action, updates);
+    renumber();
+  }
+
+  const cloneSubgrid = ({min_x, min_y, max_x, max_y}) => {
     const subgrid = [];
-    const subwidth = max_y - min_y + 1;
-    const subheight = max_x - min_x + 1;
+    const subheight = max_y - min_y + 1;
+    const subwidth = max_x - min_x + 1;
     for (let y = min_y; y <= max_y; y++) {
       for (let x = min_x; x <= max_x; x++) {
         const idx = y * width + x;
         subgrid.push({...grid[idx]});
       }
     }
+    return { subgrid, subwidth, subheight };
+  }
+
+  const exportPuz = () => {
+    let region;
+    if (isAreaSelected) {
+      region = normalizedSelected();
+    } else {
+      region = {
+        min_x: 0,
+        min_y: 0,
+        max_x: width-1,
+        max_y: height-1,
+      };
+    }
+
+    const { subgrid, subwidth, subheight } = cloneSubgrid(region);
     renumberSubgrid(subgrid, subwidth, subheight);
     const acrossClues = [];
     const downClues = [];
