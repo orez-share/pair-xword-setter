@@ -226,20 +226,18 @@
       }
     };
 
-    let prevWall = true;
-    for (let x = 0; x < width; x++) {
-      setNum({idx: x, topBounded: true, leftBounded: prevWall});
-      prevWall = grid[x].wall;
-    }
+    const isWall = (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return true;
+      const idx = y * width + x;
+      return grid[idx].wall;
+    };
 
-    for (let y = 1; y < height; y++) {
-      const row = y * width;
-      const topBounded = grid[row-width].wall;
-      setNum({idx: row, topBounded, leftBounded: true});
-      for (let x = 1; x < width; x++) {
-        const idx = row + x;
-        const topBounded = grid[idx-width].wall;
-        const leftBounded = grid[idx-1].wall;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        // one cell regions do NOT get clues.
+        const topBounded = isWall(x, y-1) && !isWall(x, y+1);
+        const leftBounded = isWall(x-1, y) && !isWall(x+1, y);
         setNum({idx, topBounded, leftBounded});
       }
     }
@@ -586,26 +584,30 @@
     {/each}
   </div>
   {#if showClues}
-    <div class="clue">
-      <label for="across-clue">{selAcrossClueCell.number}A</label>
-      <div class="flex-container">
-        <input id="across-clue"
-          class="fill-width"
-          type="text"
-          bind:value={selAcrossClueCell.acrossClue}
-        />
+    {#if selAcrossClueCell.number}
+      <div class="clue">
+        <label for="across-clue">{selAcrossClueCell.number}A</label>
+        <div class="flex-container">
+          <input id="across-clue"
+            class="fill-width"
+            type="text"
+            bind:value={selAcrossClueCell.acrossClue}
+          />
+        </div>
       </div>
-    </div>
-    <div class="clue">
-      <label for="down-clue">{selDownClueCell.number}D</label>
-      <div class="flex-container">
-        <input id="down-clue"
-          class="fill-width"
-          type="text"
-          bind:value={selDownClueCell.downClue}
-        />
+    {/if}
+    {#if selDownClueCell.number}
+      <div class="clue">
+        <label for="down-clue">{selDownClueCell.number}D</label>
+        <div class="flex-container">
+          <input id="down-clue"
+            class="fill-width"
+            type="text"
+            bind:value={selDownClueCell.downClue}
+          />
+        </div>
       </div>
-    </div>
+    {/if}
   {/if}
 </div>
 
