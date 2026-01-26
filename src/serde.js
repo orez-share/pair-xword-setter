@@ -12,15 +12,15 @@ const encodeChr = (byte) => {
   return byte - 65;
 }
 
-export const serializeGrid = ({grid, width}) => {
+export const serializeGrid = ({grid, width, height}) => {
   return {
-    fill: serializeFill({grid, width}),
+    fill: serializeFill({grid, width, height}),
     across: filterMap(grid, (elem) => elem.acrossClue),
     down: filterMap(grid, (elem) => elem.downClue),
   }
 }
 
-const serializeFill = ({grid, width}) => {
+const serializeFill = ({grid, width, height}) => {
   let idx;
 
   // Closure over `&mut idx`.
@@ -31,17 +31,17 @@ const serializeFill = ({grid, width}) => {
     let len = idx - start;
     while (len > 0) {
       if (len == 1) {
-        push5(one);
+        write5(one);
         break;
       } else if (len == 2) {
-        push5(one);
-        push5(one);
+        write5(one);
+        write5(one);
         break;
       } else {
         const take = Math.min(len, 258);
         len -= take;
-        push5(many);
-        push8(take-2);
+        write5(many);
+        write8(take-2);
       }
     }
   };
@@ -49,7 +49,7 @@ const serializeFill = ({grid, width}) => {
   const bytes = [0];
   let remBits = 8;
 
-  const push = (byte, bits) => {
+  const write = (byte, bits) => {
     const last = bytes.length - 1;
     if (bits <= remBits) { // if it fits
       remBits -= bits;
@@ -64,17 +64,21 @@ const serializeFill = ({grid, width}) => {
       bytes.push(right);
     }
   };
-  const push5 = (byte) => push(byte, 5);
-  const push8 = (byte) => push(byte, 8);
+  const write5 = (byte) => write(byte, 5);
+  const write8 = (byte) => write(byte, 8);
 
   // everything before this is setting up closure nonsense.
   // this begins the actual encoding algo.
   if (width > 256 || width == 0) {
     throw new Error("unsupported width")
   }
-  push8(width-1);
+  write8(width-1);
+  if (height > 256 || height == 0) {
+    throw new Error("unsupported height")
+  }
+  write8(height-1);
 
-  for (idx = 0; idx < grid.length; idx++) {
+  for (idx = 0; idx < grid.length;) {
     if (grid[idx].wall) {
       compress(WALL_ONE, WALL_MANY, elem => elem.wall);
     } else if (grid[idx].fill === "") {
@@ -83,8 +87,9 @@ const serializeFill = ({grid, width}) => {
       const fill = grid[idx].fill;
       const first = encodeChr(fill.charCodeAt(0));
       const second = fill.length === 1 ? EMPTY_ONE : encodeChr(fill.charCodeAt(1));
-      push5(first);
-      push5(second);
+      write5(first);
+      write5(second);
+      idx++
     }
   }
   return Uint8Array.from(bytes).toBase64({omitPadding: true});
@@ -98,3 +103,72 @@ const serialize = () => {
   //   across: [clue],
   // }
 };
+
+export const deserializeFill = (fill) => {
+  const EMPTY = { fill: "", wall: false};
+  const WALL = { fill: "", wall: true };
+  const grid = [];
+  const bytes = Uint8Array.fromBase64(fill);
+  let bytedx = 0;
+  let bitdx = 0;
+
+  const read = (bits) => {
+    let byte = bytes[bytedx];
+    if (bitdx + bits <= 8) {
+      bitdx += bits;
+      const mask = (1 << bits) - 1;
+      const out = (byte >> (8 - bitdx)) & mask;
+      return out;
+    }
+    const leftBits = 8 - bitdx;
+    const rightBits = bits - leftBits;
+    const leftMask = (1 << leftBits) - 1;
+    const left = (byte & leftMask) << rightBits;
+    bytedx++;
+    byte = bytes[bytedx];
+    bitdx = rightBits;
+    if (bytedx >= bytes.length) {
+      throw new Error("could not deserialize -- unexpected end of stream");
+    }
+    const rightMask = (1 << rightBits) - 1;
+    const right = (byte >> (8 - rightBits)) & rightMask;
+    return left | right;
+  }
+
+  const width = read(8) + 1;
+  const height = read(8) + 1;
+
+  let elem;
+  while (grid.length < width * height) {
+    const elem = read(5);
+    if (elem < 26) {
+      let fill;
+      const next = read(5);
+      if (next === EMPTY_ONE) {
+        fill = String.fromCharCode(elem + 65);
+      } else if (next < 26) {
+        fill = String.fromCharCode(elem + 65, next + 65);
+      } else {
+        throw new Error("could not deserialize -- unexpected fill byte");
+      }
+      grid.push({ fill, wall: false });
+    } else if (elem === EMPTY_ONE) {
+      grid.push({...EMPTY});
+    } else if (elem === EMPTY_MANY) {
+      const count = read(8) + 2;
+      for (let n = 0; n < count; n++) {
+        grid.push({...EMPTY});
+      }
+    } else if (elem === WALL_ONE) {
+      grid.push({...WALL});
+    } else if (elem === WALL_MANY) {
+      const count = read(8) + 2;
+      for (let n = 0; n < count; n++) {
+        grid.push({...WALL});
+      }
+    } else {
+      throw new Error("could not deserialize -- unexpected control byte");
+    }
+  }
+  return { grid, width, height };
+}

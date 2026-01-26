@@ -437,7 +437,7 @@
     if (!selected) return;
     let region = normalizedSelected();
     const clone = cloneSubgrid(region);
-    let serialized = serializeGrid({grid: clone.subgrid, width: clone.subwidth});
+    let serialized = serializeGrid({grid: clone.subgrid, width: clone.subwidth, height: clone.subheight});
     navigator.clipboard.writeText(JSON.stringify(serialized));
   }
 
