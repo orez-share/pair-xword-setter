@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import init, { generate_puz } from "xword-puz";
   import { chunked as chunkedGen } from './util';
+  import { serializeGrid } from './serde';
 
   export let cellFillLen;
   const chunked = word => chunkedGen(word, cellFillLen);
@@ -436,10 +437,8 @@
     if (!selected) return;
     let region = normalizedSelected();
     const clone = cloneSubgrid(region);
-    for (let cell of clone.subgrid) {
-      delete cell.number;
-    }
-    navigator.clipboard.writeText(JSON.stringify(clone));
+    let serialized = serializeGrid({grid: clone.subgrid, width: clone.subwidth});
+    navigator.clipboard.writeText(JSON.stringify(serialized));
   }
 
   const deleteSelected = (action) => {
