@@ -1,4 +1,5 @@
 import { filterMap } from "./util";
+import { renumberSubgrid } from "./grid";
 
 const EMPTY_ONE = 28;
 const EMPTY_MANY = 29;
@@ -12,11 +13,15 @@ const encodeChr = (byte) => {
   return byte - 65;
 }
 
-export const serializeGrid = ({grid, width, height}) => {
+export const serializeGrid = (sub) => {
+  // if the copied subgrid has dangling one-long sections
+  // that were not one-long in the full grid, we want to be
+  // sure we clear their `*Clue` fields.
+  renumberSubgrid(sub);
   return {
-    fill: serializeFill({grid, width, height}),
-    across: filterMap(grid, (elem) => elem.acrossClue),
-    down: filterMap(grid, (elem) => elem.downClue),
+    fill: serializeFill(sub),
+    across: filterMap(sub.grid, (elem) => elem.acrossClue),
+    down: filterMap(sub.grid, (elem) => elem.downClue),
   }
 }
 
@@ -82,7 +87,7 @@ const serializeFill = ({grid, width, height}) => {
     if (grid[idx].wall) {
       compress(WALL_ONE, WALL_MANY, elem => elem.wall);
     } else if (grid[idx].fill === "") {
-      compress(EMPTY_ONE, EMPTY_MANY, elem => elem.fill === "");
+      compress(EMPTY_ONE, EMPTY_MANY, elem => !elem.wall && elem.fill === "");
     } else {
       const fill = grid[idx].fill;
       const first = encodeChr(fill.charCodeAt(0));
@@ -92,19 +97,30 @@ const serializeFill = ({grid, width, height}) => {
       idx++
     }
   }
+  // encoding a character of fill as 5 bits (8 bits -> 5 bits)
+  // and then base64 encoding it (6 bits -> 8 bits)
+  // only really gives us slight savings.. (5/6s the size).
+  // What I'm saying is I definitely overcomplicated this.
   return Uint8Array.from(bytes).toBase64({omitPadding: true});
 }
 
-const serialize = () => {
-  // {
-  //   meta: {title, author, notes},
-  //   grid,
-  //   down: [clue],
-  //   across: [clue],
-  // }
-};
+export const deserializeGrid = ({fill, across, down}) => {
+  const grid = deserializeFill(fill);
+  const acrossIt = across.values();
+  const downIt = down.values();
+  renumberSubgrid(grid);
+  for (let cell of grid.grid) {
+    if (cell.downClue != null) {
+      cell.downClue = downIt.next().value;
+    }
+    if (cell.acrossClue != null) {
+      cell.acrossClue = acrossIt.next().value;
+    }
+  }
+  return grid;
+}
 
-export const deserializeFill = (fill) => {
+const deserializeFill = (fill) => {
   const EMPTY = { fill: "", wall: false};
   const WALL = { fill: "", wall: true };
   const grid = [];

@@ -2,7 +2,8 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import init, { generate_puz } from "xword-puz";
   import { chunked as chunkedGen } from './util';
-  import { serializeGrid } from './serde';
+  import { serializeGrid, deserializeGrid } from './serde';
+  import { renumberSubgrid } from "./grid";
 
   export let cellFillLen;
   const chunked = word => chunkedGen(word, cellFillLen);
@@ -211,40 +212,7 @@
     renumber();
   }
 
-  const renumberSubgrid = (grid, width, height) => {
-    let num = 1;
-    const setNum = ({idx, topBounded, leftBounded}) => {
-      const cell = grid[idx];
-      const bounded = topBounded || leftBounded;
-      cell.number = null;
-      if (topBounded) cell.downClue ??= "";
-      else cell.downClue = null;
-      if (leftBounded) cell.acrossClue ??= "";
-      else cell.acrossClue = null;
-      if (!cell.wall && bounded) {
-        cell.number = num;
-        num++;
-      }
-    };
-
-    const isWall = (x, y) => {
-      if (x < 0 || y < 0 || x >= width || y >= height) return true;
-      const idx = y * width + x;
-      return grid[idx].wall;
-    };
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = y * width + x;
-        // one cell regions do NOT get clues.
-        const topBounded = isWall(x, y-1) && !isWall(x, y+1);
-        const leftBounded = isWall(x-1, y) && !isWall(x+1, y);
-        setNum({idx, topBounded, leftBounded});
-      }
-    }
-  }
-
-  const renumber = () => renumberSubgrid(grid, width, height);
+  const renumber = () => renumberSubgrid({grid, width, height});
 
   const handleCellMouseOver = ({event, x, y}) => {
     if (event.buttons != 1 || selected?.state !== "area") return;
@@ -306,10 +274,12 @@
               navigator.clipboard.readText().then(text => {
                 // TODO: we should REALLY, REALLY sanitize this input.
                 let obj;
+                let pastable;
                 try {
                   obj = JSON.parse(text);
+                  pastable = deserializeGrid(obj);
                 } catch { return };
-                paste(obj);
+                paste(pastable);
               })
               break;
             case 90: // Z
@@ -385,18 +355,18 @@
     dispatchUpdate();
   }
 
-  const paste = ({ subgrid, subheight, subwidth }) => {
+  const paste = (sub) => {
     if (!selected) return;
     // TODO: some visual feedback if this fails
-    if (selected.x + subwidth > width || selected.y + subheight > height) return;
+    if (selected.x + sub.width > width || selected.y + sub.height > height) return;
     const updates = [];
     let gridIdx = 0;
-    for (let y = 0; y < subheight; y++) {
-      for (let x = 0; x < subwidth; x++) {
+    for (let y = 0; y < sub.height; y++) {
+      for (let x = 0; x < sub.width; x++) {
         const idx = (selected.y + y) * width + (selected.x + x);
         updates.push({
           idx,
-          is: subgrid[gridIdx],
+          is: sub.grid[gridIdx],
         });
         gridIdx++;
       }
@@ -437,7 +407,7 @@
     if (!selected) return;
     let region = normalizedSelected();
     const clone = cloneSubgrid(region);
-    let serialized = serializeGrid({grid: clone.subgrid, width: clone.subwidth, height: clone.subheight});
+    let serialized = serializeGrid(clone);
     navigator.clipboard.writeText(JSON.stringify(serialized));
   }
 
@@ -472,7 +442,7 @@
         subgrid.push({...grid[idx]});
       }
     }
-    return { subgrid, subwidth, subheight };
+    return { grid: subgrid, width: subwidth, height: subheight };
   }
 
   const exportPuz = () => {
@@ -488,11 +458,11 @@
       };
     }
 
-    const { subgrid, subwidth, subheight } = cloneSubgrid(region);
-    renumberSubgrid(subgrid, subwidth, subheight);
+    const sub = cloneSubgrid(region);
+    renumberSubgrid(sub);
     const acrossClues = [];
     const downClues = [];
-    for (const cell of subgrid) {
+    for (const cell of sub.grid) {
       if (cell.number == null) continue
       if (cell.acrossClue != null) {
         acrossClues.push([cell.number, cell.acrossClue]);
@@ -501,11 +471,11 @@
         downClues.push([cell.number, cell.downClue]);
       }
     }
-    const fill = subgrid.map(cell => cell.wall ? null : cell.fill);
+    const fill = sub.grid.map(cell => cell.wall ? null : cell.fill);
 
     const payload = {
-      width: subwidth,
-      height: subheight,
+      width: sub.width,
+      height: sub.height,
       grid: fill,
       acrossClues,
       downClues,
