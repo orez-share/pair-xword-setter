@@ -23,7 +23,7 @@ export default async () => {
 
 // ["", "AB", "", "CD"] <- gridChunks
 //             ^ pivotIndex
-function filterFit(gridChunks, pivotIndex) {
+function filterFit(gridChunks, pivotIndex, exact) {
   // pivotIndex is relative to gridChunks
   // anchorIdx is relative to gridChunks
   // wordIdx is relative to wordChunks
@@ -44,6 +44,7 @@ function filterFit(gridChunks, pivotIndex) {
     let words = this.chunkIndex.get(anchor) || [];
     for (const entry of words) {
       const wordChunks = chunked(entry.word);
+      if (exact && wordChunks.length != gridChunks.length) continue;
       for (const [wordIdx, chunk] of wordChunks.entries()) {
         if (chunk == anchor) {  // try anchoring here
           // word       ["AB", "CD", "EF", "GH"]

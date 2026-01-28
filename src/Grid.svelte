@@ -77,25 +77,48 @@
   // A "pattern" (: [String]) is the cell fill before and after
   // the coordinate in the given axis, from wall to wall.
 
-  const snagPattern = ({front, back, step, x, y}) => {
+  const snagPattern = ({front, back, step, x, y, x2, y2}) => {
+    // I wrote this function bad, as a joke.
     const ERROR = null;
     let chunkIndex = -1;
     let idx = y * width + x;
     if (grid[idx].wall) return ERROR; // XXX
+    // run backwards
     for(; idx >= front; idx -= step) {
       if (grid[idx].wall) break;
       chunkIndex++;
     }
+    const region = normalizedRegion({x, y, x2, y2});
+    const selIdx = {
+      start: region.minY * width + region.minX,
+      end: region.maxY * width + region.maxX,
+    };
+    const sel = { start: null, end: null };
     const start = idx + step;
-    const gridChunks = [];
-    for(idx = start; idx < back && !grid[idx].wall; idx += step) {
+    let gridChunks = [];
+    // run forward and collect chunks
+    for (idx = start; idx < back && !grid[idx].wall; idx += step) {
+      if (idx == selIdx.start) sel.start = gridChunks.length;
+      else if (idx == selIdx.end) sel.end = gridChunks.length;
       const fill = grid[idx].fill;
       // XXX: omit partially-filled cells, for now
-      if (!fill.length || fill.length == cellFillLen) {
-        gridChunks.push(fill);
-      }
+      const partialFill = fill.length && fill.length !== cellFillLen;
+      gridChunks.push(partialFill ? "" : fill);
     }
-    return { pattern: gridChunks, index: chunkIndex };
+
+    // If we're selecting a single line of cells which falls entirely within
+    // the pattern we're snagging, force the suggestions to completely
+    // fill the selection.
+    //
+    // Understanding how these requirements are represented by this condition
+    // is left as an exercise to the reader (sorry).
+    let exact = false;
+    if (sel.start != null && sel.end != null) {
+      gridChunks = gridChunks.slice(sel.start, sel.end + 1);
+      chunkIndex -= sel.start;
+      exact = true;
+    }
+    return { pattern: gridChunks, index: chunkIndex, exact };
   }
 
   const acrossPattern = acrossStep(snagPattern);
@@ -218,6 +241,7 @@
     if (event.buttons != 1 || selected?.state !== "area") return;
     selected.x2 = x;
     selected.y2 = y;
+    dispatchUpdate();
   }
 
   const handleKey = evt => {
@@ -306,9 +330,9 @@
 
   const cellIsSelected = (selected, x, y) => {
     if (!selected) return false;
-    const { min_x, max_x, min_y, max_y } = normalizedSelected();
-    return min_x <= x && x <= max_x &&
-      min_y <= y && y <= max_y;
+    const { minX, maxX, minY, maxY } = normalizedSelected();
+    return minX <= x && x <= maxX &&
+      minY <= y && y <= maxY;
   }
 
   // Perform an undo-able action, and register it to the undo stack.
@@ -394,14 +418,16 @@
     setTimeout(() => window.URL.revokeObjectURL(url), 1000);
   }
 
-  const normalizedSelected = () => {
+  const normalizedRegion = ({x, y, x2, y2}) => {
     return {
-      min_x: Math.min(selected.x, selected.x2),
-      max_x: Math.max(selected.x, selected.x2),
-      min_y: Math.min(selected.y, selected.y2),
-      max_y: Math.max(selected.y, selected.y2),
+      minX: Math.min(x, x2),
+      maxX: Math.max(x, x2),
+      minY: Math.min(y, y2),
+      maxY: Math.max(y, y2),
     }
   }
+
+  const normalizedSelected = () => normalizedRegion(selected);
 
   const copySelected = () => {
     if (!selected) return;
@@ -414,10 +440,10 @@
   const deleteSelected = (action) => {
     if (!selected) return;
     const updates = [];
-    const { min_x, max_x, min_y, max_y } = normalizedSelected();
+    const { minX, maxX, minY, maxY } = normalizedSelected();
 
-    for (let y = min_y; y <= max_y; y++) {
-      for (let x = min_x; x <= max_x; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
         const idx = y * width + x;
         updates.push({
           idx,
@@ -432,12 +458,12 @@
     renumber();
   }
 
-  const cloneSubgrid = ({min_x, min_y, max_x, max_y}) => {
+  const cloneSubgrid = ({minX, minY, maxX, maxY}) => {
     const subgrid = [];
-    const subheight = max_y - min_y + 1;
-    const subwidth = max_x - min_x + 1;
-    for (let y = min_y; y <= max_y; y++) {
-      for (let x = min_x; x <= max_x; x++) {
+    const subheight = maxY - minY + 1;
+    const subwidth = maxX - minX + 1;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
         const idx = y * width + x;
         subgrid.push({...grid[idx]});
       }
@@ -451,10 +477,10 @@
       region = normalizedSelected();
     } else {
       region = {
-        min_x: 0,
-        min_y: 0,
-        max_x: width-1,
-        max_y: height-1,
+        minX: 0,
+        minY: 0,
+        maxX: width-1,
+        maxY: height-1,
       };
     }
 

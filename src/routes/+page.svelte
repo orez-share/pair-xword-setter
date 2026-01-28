@@ -35,9 +35,9 @@
       return
     }
     let allCellFills;
-    const getStats = ({ pattern, index }) => {
+    const getStats = ({ pattern, index, exact }) => {
       if (pattern.some(cell => cell)) {
-        const { gridFills, cellFills } = dict.filterFit(pattern, index);
+        const { gridFills, cellFills } = dict.filterFit(pattern, index, exact);
         allCellFills = intersect(allCellFills, cellFills);
         return gridFills;
       }
