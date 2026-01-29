@@ -13,7 +13,7 @@ const config = {
 			fallback: "index.html",
 		}) : adapterAuto(),
 		paths: {
-			base: isRelease ? '/pair-xword-setter' : '',
+			base: isRelease ? '/peapod-setter' : '',
 		},
 	}
 };

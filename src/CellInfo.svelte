@@ -107,6 +107,7 @@
   .word-grid > * {
     overflow: hidden;
     text-overflow: ellipsis;
+    margin-right: 10px;
   }
 
   .letter-grid {

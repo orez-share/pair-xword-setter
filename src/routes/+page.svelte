@@ -70,7 +70,7 @@
 </script>
 
 <svelte:head>
-  <title>Pair XWord Setter</title>
+  <title>🫛 Peapod Crossword Setter</title>
 </svelte:head>
 
 <div id="body-wrapper">
